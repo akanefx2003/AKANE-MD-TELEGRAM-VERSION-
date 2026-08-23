@@ -9,7 +9,7 @@ function getApiKeys() {
     return (process.env.RAPIDAPI_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
 }
 
-async function getAudioBuffer(videoId) {
+async function getAudioLink(videoId) {
     const keys = getApiKeys();
     if (keys.length === 0) throw new Error('Aucune clé RAPIDAPI_KEYS configurée dans .env');
 
@@ -25,17 +25,11 @@ async function getAudioBuffer(videoId) {
     const data = dlRes.data;
     if (data?.status === 'processing') {
         await new Promise(r => setTimeout(r, 3000));
-        return getAudioBuffer(videoId);
+        return getAudioLink(videoId);
     }
     if (data?.status !== 'ok' || !data?.link) throw new Error('Échec du téléchargement (source indisponible)');
 
-    const audioRes = await axios.get(data.link, {
-        responseType: 'arraybuffer',
-        timeout: 60000,
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': `https://${API_HOST}/` }
-    });
-
-    return { buffer: Buffer.from(audioRes.data), title: data.title };
+    return { url: data.link, title: data.title };
 }
 
 export default {
@@ -54,11 +48,14 @@ export default {
         }
 
         const video = resultat.videos[0];
-        await ctx.telegram.editMessageText(ctx.chat.id, searching.message_id, undefined, `⏳ Téléchargement de "${video.title}"...`);
+        await ctx.telegram.editMessageText(ctx.chat.id, searching.message_id, undefined, `⏳ Préparation de "${video.title}"...`);
 
         try {
-            const { buffer, title } = await getAudioBuffer(video.videoId);
-            await ctx.replyWithAudio({ source: buffer, filename: `${title}.mp3` }, {
+            const { url, title } = await getAudioLink(video.videoId);
+            // On passe directement l'URL à Telegram : c'est Telegram qui télécharge le
+            // fichier depuis la source, pas notre serveur — évite le double transfert
+            // (source → Render → Telegram) qui provoquait des timeouts ("socket hang up").
+            await ctx.replyWithAudio({ url, filename: `${title}.mp3` }, {
                 title,
                 caption: `🎵 ${title}\n⏱️ ${video.timestamp}`
             });
