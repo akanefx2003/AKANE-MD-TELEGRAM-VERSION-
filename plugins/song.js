@@ -52,13 +52,30 @@ export default {
 
         try {
             const { url, title } = await getAudioLink(video.videoId);
-            // On passe directement l'URL à Telegram : c'est Telegram qui télécharge le
-            // fichier depuis la source, pas notre serveur — évite le double transfert
-            // (source → Render → Telegram) qui provoquait des timeouts ("socket hang up").
-            await ctx.replyWithAudio({ url, filename: `${title}.mp3` }, {
-                title,
-                caption: `🎵 ${title}\n⏱️ ${video.timestamp}`
-            });
+            const caption = `🎵 ${title}\n⏱️ ${video.timestamp}`;
+
+            // La connexion Render → Telegram peut parfois se couper sur l'hébergement
+            // gratuit ("socket hang up") — on retente automatiquement avant d'abandonner.
+            let lastErr = null;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    await ctx.replyWithAudio({ url, filename: `${title}.mp3` }, { title, caption });
+                    return;
+                } catch (err) {
+                    lastErr = err;
+                    console.error(`[song] tentative audio ${attempt}/3 échouée :`, err.message);
+                    if (attempt < 3) await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+
+            // Dernier recours : envoyer en document plutôt qu'en audio
+            // (Telegram traite parfois l'audio différemment — extraction de durée, etc. —
+            // ce qui peut être ce qui cause le timeout ; le document est plus direct).
+            try {
+                await ctx.replyWithDocument({ url, filename: `${title}.mp3` }, { caption });
+            } catch (err2) {
+                await ctx.reply(`❌ Échec de l'envoi après plusieurs tentatives : ${lastErr?.message || err2.message}`);
+            }
         } catch (err) {
             await ctx.reply(`❌ Erreur : ${err.message}`);
         }
