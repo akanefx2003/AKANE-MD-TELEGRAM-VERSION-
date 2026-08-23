@@ -3,6 +3,7 @@ import { Telegraf } from 'telegraf';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 dotenv.config();
@@ -120,6 +121,13 @@ async function loadAllPlugins() {
     await bot.launch();
     console.log('✅ Bot Telegram connecté et prêt !');
 })();
+
+// Mini serveur HTTP — uniquement pour que Render (plan gratuit "Web Service")
+// considère le service comme actif. Le bot lui-même tourne en polling (bot.launch()),
+// il n'a besoin d'aucun port pour fonctionner.
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => { res.writeHead(200); res.end('Bot Telegram actif ✅'); })
+    .listen(PORT, () => console.log(`🌐 Ping HTTP actif sur le port ${PORT} (pour Render)`));
 
 process.once('SIGINT',  () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
